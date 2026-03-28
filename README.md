@@ -30,7 +30,7 @@ cargo build --release
 ### With network (fetches data from Overpass API)
 
 ```bash
-./target/release/sosaia-pipeline \
+./target/release/sosaia-preprocessing \
   --bbox "48.856,2.351,48.858,2.354" \
   --city-name paris \
   --output-dir ./output \
@@ -40,7 +40,7 @@ cargo build --release
 ### Without network (using a local OSM JSON file)
 
 ```bash
-./target/release/sosaia-pipeline \
+./target/release/sosaia-preprocessing \
   --bbox "48.856,2.351,48.858,2.354" \
   --city-name paris \
   --output-dir ./output \
@@ -133,7 +133,7 @@ See `src/material_ids.rs` for the full mapping. Summary:
 
 ```bash
 # Step 1: Download and save (requires network)
-./target/release/sosaia-pipeline \
+./target/release/sosaia-preprocessing \
   --bbox "35.68,139.76,35.69,139.77" \
   --city-name tokyo \
   --output-dir ./output \
@@ -141,7 +141,7 @@ See `src/material_ids.rs` for the full mapping. Summary:
   --terrain
 
 # Step 2: Re-run offline anytime
-./target/release/sosaia-pipeline \
+./target/release/sosaia-preprocessing \
   --bbox "35.68,139.76,35.69,139.77" \
   --city-name tokyo \
   --output-dir ./output \
@@ -153,7 +153,7 @@ See `src/material_ids.rs` for the full mapping. Summary:
 ```bash
 cargo build --release
 
-./target/release/sosaia-pipeline \
+./target/release/sosaia-preprocessing \
   --bbox "48.856,2.351,48.858,2.354" \
   --city-name test-paris \
   --output-dir ./output \
