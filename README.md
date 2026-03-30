@@ -71,13 +71,16 @@ OPTIONS:
 
 ```
 output/
-  chunks/
-    <city-name>/
-      manifest.json       # City metadata + chunk index
-      0_0.bin             # Binary chunk file
-      0_1.bin
-      1_0.bin
-      ...
+  chunks/<city-name>/
+    manifest.json           # City metadata + chunk index
+    0_0.bin                 # Raw block data (for physics collision)
+    ...
+  meshes/<city-name>/
+    manifest.json           # Mesh metadata
+    0_0.mesh.bin            # LOD0 — full detail precomputed mesh
+    0_0.lod1.mesh.bin       # LOD1 — 2x2x2 downsample (~7x fewer verts)
+    0_0.lod2.mesh.bin       # LOD2 — 4x4x4 downsample (~40x fewer verts)
+    ...
 ```
 
 ### manifest.json
@@ -148,6 +151,38 @@ See `src/material_ids.rs` for the full mapping. Summary:
   --file ./testdata/tokyo.json
 ```
 
+## Precomputed Mesh Format (.mesh.bin)
+
+The pipeline precomputes greedy-meshed geometry with ambient occlusion in Rust, so the web client
+uploads vertex buffers directly to the GPU with zero runtime meshing.
+
+```
+Header (10 bytes):
+  magic:       u32 LE = 0x534F534D ("SOSM")
+  version:     u16 LE = 1
+  chunk_x:     i16 LE
+  chunk_z:     i16 LE
+Material count: u16 LE
+Per material:
+  material_id:    u16 LE
+  vertex_count:   u32 LE
+  index_count:    u32 LE
+  positions:      [f32 LE; vertex_count * 3]
+  normals:        [f32 LE; vertex_count * 3]
+  colors:         [f32 LE; vertex_count * 3]  (AO baked)
+  indices:        [u32 LE; index_count]
+```
+
+### LOD Levels
+
+Three levels generated per chunk:
+
+| Level | Downsample | Typical reduction | Distance threshold |
+|-------|-----------|-------------------|-------------------|
+| LOD0  | 1:1       | Full detail       | 0-400m            |
+| LOD1  | 2x2x2    | ~7x fewer verts   | 400-1000m         |
+| LOD2  | 4x4x4    | ~40x fewer verts  | 1000m+            |
+
 ## Quick test (no network required)
 
 ```bash
@@ -161,7 +196,7 @@ cargo build --release
 
 # Verify output
 ls -lh ./output/chunks/test-paris/
-cat ./output/chunks/test-paris/manifest.json
+ls -lh ./output/meshes/test-paris/
 ```
 
-Expected output: 4 chunks, ~187K blocks, ~1MB total.
+Expected output: 4 chunks, ~187K blocks, precomputed meshes with 3 LOD levels per chunk.

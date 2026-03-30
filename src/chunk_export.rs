@@ -17,7 +17,9 @@
 ///     material_id: u16 (Sosaia material ID, little-endian)
 
 use crate::block_definitions::AIR;
+use crate::greedy_mesher;
 use crate::material_ids::{self, MaterialId, MAT_AIR};
+use crate::mesh_export;
 use crate::world_editor::common::{BlockStorage, WorldToModify};
 use colored::Colorize;
 use std::collections::HashMap;
@@ -199,6 +201,98 @@ pub fn export_chunks(
     }
 
     chunk_infos.sort_by_key(|c| (c.x, c.z));
+
+    // === Precomputed mesh export ===
+    println!(
+        "{} Generating precomputed meshes...",
+        "[MESH]".bold().cyan()
+    );
+
+    let meshes_dir = output_dir.join("meshes").join(city_name);
+    fs::create_dir_all(&meshes_dir)?;
+
+    let mut mesh_chunk_infos: Vec<mesh_export::MeshChunkInfo> = Vec::new();
+
+    for ((cx, cz), blocks) in &chunk_blocks {
+        // Convert ExportBlock to greedy_mesher::Block
+        let mesher_blocks: Vec<greedy_mesher::Block> = blocks
+            .iter()
+            .map(|b| greedy_mesher::Block {
+                local_x: b.local_x,
+                local_z: b.local_z,
+                y: b.y,
+                material_id: b.material_id,
+            })
+            .collect();
+
+        let world_offset_x = (*cx * CHUNK_SIZE) as f32;
+        let world_offset_z = (*cz * CHUNK_SIZE) as f32;
+
+        // Generate all LOD levels
+        for &(factor, suffix) in greedy_mesher::LOD_LEVELS {
+            let (ds_blocks, ds_chunk_size) = greedy_mesher::downsample_blocks(&mesher_blocks, CHUNK_SIZE, factor);
+
+            let meshed = greedy_mesher::greedy_mesh(
+                &ds_blocks,
+                ds_chunk_size,
+                world_offset_x,
+                world_offset_z,
+            );
+
+            let filename = format!("{}_{}{}.mesh.bin", cx, cz, suffix);
+            let filepath = meshes_dir.join(&filename);
+
+            let total_verts: u32 = meshed.meshes.iter().map(|m| m.vertex_count).sum();
+            let total_indices: u32 = meshed.meshes.iter().map(|m| m.indices.len() as u32).sum();
+
+            let size = mesh_export::write_mesh_file(&meshed, *cx as i16, *cz as i16, &filepath)?;
+
+            // Only add LOD0 to manifest chunks list; LODs are discoverable by suffix
+            if factor == 1 {
+                mesh_chunk_infos.push(mesh_export::MeshChunkInfo {
+                    x: *cx,
+                    z: *cz,
+                    file: filename,
+                    vertex_count: total_verts,
+                    index_count: total_indices,
+                    material_count: meshed.meshes.len() as u16,
+                    size_bytes: size,
+                });
+            }
+
+            println!(
+                "    chunk ({},{}) LOD{}: {} verts, {} indices",
+                cx, cz,
+                if factor == 1 { 0 } else if factor == 2 { 1 } else { 2 },
+                total_verts, total_indices
+            );
+        }
+    }
+
+    mesh_chunk_infos.sort_by(|a, b| (a.x, a.z).cmp(&(b.x, b.z)));
+
+    let mesh_manifest = mesh_export::MeshManifest {
+        city: city_name.to_string(),
+        bbox: mesh_export::MeshBBoxInfo {
+            min_lat: bbox.0,
+            min_lng: bbox.1,
+            max_lat: bbox.2,
+            max_lng: bbox.3,
+        },
+        chunk_size_meters: CHUNK_SIZE,
+        chunks: mesh_chunk_infos,
+        format: "mesh_v1".to_string(),
+    };
+
+    let mesh_manifest_path = meshes_dir.join("manifest.json");
+    let mesh_manifest_json = serde_json::to_string_pretty(&mesh_manifest)?;
+    fs::write(&mesh_manifest_path, &mesh_manifest_json)?;
+
+    println!(
+        "  {} Meshes exported to: {}",
+        "Done!".bold().green(),
+        meshes_dir.display()
+    );
 
     let manifest = CityManifest {
         city: city_name.to_string(),
